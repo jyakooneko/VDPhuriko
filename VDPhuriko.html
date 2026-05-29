@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>VDP 振り子シミュレータ</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+            background: #eef2f3;
+            padding: 15px;
+            border-radius: 6px;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+        }
+        label {
+            font-weight: bold;
+            margin-bottom: 5px;
+            font-size: 0.9em;
+        }
+        /* 入力ボックスのスタイリング */
+        input[type="number"] {
+            padding: 8px;
+            font-size: 1em;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background: white;
+        }
+        .canvas-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #fafafa;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 20px;
+        }
+        canvas {
+            background: white;
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.05);
+        }
+        .btn-group {
+            grid-column: 1 / -1;
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            flex: 1;
+            padding: 12px;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1em;
+        }
+        #btn-reset { background-color: #007bff; }
+        #btn-reset:hover { background-color: #0056b3; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>VDP 振り子シミュレータ</h2>
+    
+    <div class="controls">
+        <div class="control-group">
+            <label for="param-mu">&mu; (非線形性の強さ):</label>
+            <input type="number" id="param-mu" step="0.01" value="0.2">
+        </div>
+        <div class="control-group">
+            <label for="init-x">初期位置 x(0) [角度]:</label>
+            <input type="number" id="init-x" step="0.1" value="0.1">
+        </div>
+        <div class="control-group">
+            <label for="init-v">初期速度 v(0) [角速度]:</label>
+            <input type="number" id="init-v" step="0.1" value="0.0">
+        </div>
+        <div class="btn-group">
+            <button id="btn-reset">設定を適用してリセット</button>
+        </div>
+    </div>
+
+    <div class="canvas-container">
+        <canvas id="pendulumCanvas" width="500" height="400"></canvas>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('pendulumCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // 物理状態の変数
+    let x = 0.1; // 角度 (x1)
+    let v = 0.0; // 角速度 (x2)
+    let mu = 0.2;
+
+    // 振り子の描画用パラメータ
+    const originX = canvas.width / 2;
+    const originY = 50;
+    const length = 250; // 紐の長さ(ピクセル)
+
+    // VDP方程式の導関数
+    function vdpDerivatives(x, v, mu) {
+        const dxdt = v;
+        const dvdt = mu * (1 - x * x) * v - x;
+        return [dxdt, dvdt];
+    }
+
+    // ルンゲ＝クッタ法(RK4)で1ステップ進める
+    function updatePhysics() {
+        const dt = 0.05; 
+
+        const [k1x, k1v] = vdpDerivatives(x, v, mu);
+        const [k2x, k2v] = vdpDerivatives(x + k1x * dt / 2, v + k1v * dt / 2, mu);
+        const [k3x, k3v] = vdpDerivatives(x + k2x * dt / 2, v + k2v * dt / 2, mu);
+        const [k4x, k4v] = vdpDerivatives(x + k3x * dt, v + k3v * dt, mu);
+
+        x += (k1x + 2 * k2x + 2 * k3x + k4x) * dt / 6;
+        v += (k1v + 2 * k2v + 2 * k3v + k4v) * dt / 6;
+    }
+
+    // 描画処理
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const pendulumX = originX + length * Math.sin(x);
+        const pendulumY = originY + length * Math.cos(x);
+
+        // 支点の描画
+        ctx.beginPath();
+        ctx.arc(originX, originY, 5, 0, 2 * Math.PI);
+        ctx.fillStyle = '#333';
+        ctx.fill();
+
+        // 紐の描画
+        ctx.beginPath();
+        ctx.moveTo(originX, originY);
+        ctx.lineTo(pendulumX, pendulumY);
+        ctx.strokeStyle = '#666';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // おもりの描画
+        ctx.beginPath();
+        ctx.arc(pendulumX, pendulumY, 20, 0, 2 * Math.PI);
+        
+        if (x * x < 1) {
+            ctx.fillStyle = '#ff4d4d'; // エネルギー生成中（ブースト）
+        } else {
+            ctx.fillStyle = '#007bff'; // エネルギー散逸中（ブレーキ）
+        }
+        ctx.fill();
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // 数値の描画
+        ctx.fillStyle = '#333';
+        ctx.font = '14px Arial';
+        ctx.fillText(`角度 (x1): ${x.toFixed(3)}`, 20, 30);
+        ctx.fillText(`角速度 (x2): ${v.toFixed(3)}`, 20, 50);
+    }
+
+    // メインループ
+    function loop() {
+        updatePhysics();
+        draw();
+        requestAnimationFrame(loop);
+    }
+
+    // 入力ボックスの値を物理変数に適用する関数
+    function applySettings() {
+        mu = parseFloat(document.getElementById('param-mu').value);
+        x = parseFloat(document.getElementById('init-x').value);
+        v = parseFloat(document.getElementById('init-v').value);
+
+        // NaN（空欄など）の対策
+        if (isNaN(mu)) mu = 0.2;
+        if (isNaN(x)) x = 0.1;
+        if (isNaN(v)) v = 0.0;
+    }
+
+    // ボタンクリックで適用してリセット
+    document.getElementById('btn-reset').addEventListener('click', applySettings);
+
+    // 初回実行
+    applySettings();
+    loop();
+</script>
+
+</body>
+</html>
